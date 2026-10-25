@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Added (arteigur fork)
+
+- __`GetSessionContext`__: one read-only call with the attached portal, open project, unsaved changes, and per
+  PLC its `softwarePath`, CPU type identifier, online state and the result of the last `CompilePlcSoftware`
+  through this server, plus which gated tool sets are enabled and the presets. Meant as an agent's first call.
+- __`GetOnlineState`__ and __`GetConnectionTargets`__ (read-only, never connect): the PLC's online state, and
+  the mode / PC interface / target interface combinations TIA Portal offers for reaching it.
+- __`GoOnline`__ / __`GoOffline`__, registered only with the new `--allow-online` flag.
+- __`PreviewDownload`__ / __`Download`__, registered only with the new `--allow-download` flag. The preview
+  compiles and returns a single-use `confirmToken` valid for 15 minutes; `Download` needs it. TIA Portal's
+  pre- and post-download questions are answered by policy and all returned in `Decisions`: the CPU is stopped
+  only with `allowStop` (and started again afterwards), memory is re-initialised only with
+  `allowReinitialize`, system data is overwritten only for a hardware download, and reset / selective delete /
+  passwords are never answered, so TIA Portal aborts instead.
+- __`ImportAndCompile`__ (`--allow-write`): imports one or more `.xml` / `.s7dcl` / `.scl` / `.db` / `.awl` files
+  and compiles inside one explicit transaction; compile errors roll the whole import back. Refuses to run when
+  the project cannot host a transaction, instead of writing without a way back.
+- __`CreateBlock`__ (`--allow-write`): empty OB (program cycle, cyclic interrupt with cycle time, startup), FC
+  or global DB, written as minimal SimaticML and imported with `ImportOptions.None`, so it never replaces a
+  block. Picks the first free number when none is given.
+- __`SearchHardwareCatalog`__ and __`GetPlugLocations`__ (read-only), and __`CreateDevice`__ / __`PlugModule`__,
+  registered only with `--allow-write --allow-hardware`. Additions only: nothing changes or deletes existing
+  hardware or touches network settings.
+
 ### Added
 
 - __`ExportOpcUaXml`__: exports the OPC UA data of one PLC as `<exportPath>/<softwarePath>/OPC UA/<PLC name>.xml`
