@@ -8,6 +8,9 @@ namespace TiaMcpServer
         public int? Logging { get; set; } // "stdio" or "http"
         public bool Doctor { get; set; } // print environment diagnostics and exit
         public bool AllowWrite { get; set; } // register the project-mutating tools
+        public bool AllowOnline { get; set; } // register the tools that go online to / offline from a PLC
+        public bool AllowDownload { get; set; } // register the PreviewDownload / Download tools
+        public bool AllowHardware { get; set; } // register the tools that add devices and modules
         public string? ProjectPath { get; set; } // preset for the 'path' tool argument (project file)
         public string? SoftwarePath { get; set; } // preset for the 'softwarePath' tool argument
         public string? ExportPath { get; set; } // preset for the 'exportPath' tool argument
@@ -41,6 +44,21 @@ namespace TiaMcpServer
                     case "-allow-write":
                     case "--allow-write":
                         options.AllowWrite = true;
+                        break;
+
+                    case "-allow-online":
+                    case "--allow-online":
+                        options.AllowOnline = ReadFlag(args, ref i);
+                        break;
+
+                    case "-allow-download":
+                    case "--allow-download":
+                        options.AllowDownload = ReadFlag(args, ref i);
+                        break;
+
+                    case "-allow-hardware":
+                    case "--allow-hardware":
+                        options.AllowHardware = ReadFlag(args, ref i);
                         break;
 
                     case "-project-path":
@@ -107,6 +125,9 @@ namespace TiaMcpServer
                 new("--logging", Logging?.ToString() ?? notSet),
                 new("--doctor", Doctor ? "true" : "false"),
                 new("--allow-write", AllowWrite ? "true" : "false"),
+                new("--allow-online", AllowOnline ? "true" : "false"),
+                new("--allow-download", AllowDownload ? "true" : "false"),
+                new("--allow-hardware", AllowHardware ? "true" : "false"),
                 new("--preserve-path", PreservePath ? "true" : "false"),
                 new("--with-dependencies", WithDependencies ? "true" : "false")
             };
