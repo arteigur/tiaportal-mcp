@@ -59,7 +59,12 @@ namespace TiaMcpServer.Siemens
 
             if (softwareContainer?.Software is PlcSoftware plcSoftware)
             {
-                return CompileService(plcSoftware);
+                var result = CompileService(plcSoftware);
+
+                // Remembered for GetSessionContext (Portal.Context.cs).
+                RecordCompile(softwarePath, result);
+
+                return result;
             }
 
             return null; // "Error";

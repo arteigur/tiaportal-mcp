@@ -31,6 +31,9 @@ A MCP server which connects to Siemens TIA Portal.
 | `--preserve-path`         | Flag: `preservePath` defaults to `true` for the export tools. See below.              |
 | `--with-dependencies`     | Flag: `withDependencies` defaults to `true` for the `ExportSource*` tools. See below. |
 | `--allow-write`           | Register the project-mutating tools. Omitted by default; see below.                   |
+| `--allow-online`          | Register `GoOnline` / `GoOffline` and `CompareSoftwareToOnline`, which connect to the real PLC. Never downloads. |
+| `--allow-download`        | Register `PreviewDownload` / `Download`. See [Plant tools](#plant-tools-arteigur-fork). |
+| `--allow-hardware`        | With `--allow-write`: register `CreateDevice` / `PlugModule`.                          |
 
 ## Presetting tool arguments
 
@@ -75,7 +78,7 @@ To enable write mode, add the argument to your client configuration, for example
 
 ## Tools
 
-Read-only tools (66) are always available.
+Read-only tools (76) are always available, including the fork's `GetSessionContext`, `GetOnlineState`, `GetConnectionTargets`, `SearchHardwareCatalog` and `GetPlugLocations` (see [Plant tools](#plant-tools-arteigur-fork)).
 
 | Area                          | Tools                                                                                                                                              |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -94,9 +97,18 @@ Read-only tools (66) are always available.
 | Multiuser                     | `GetMarkedObjects`, `CheckIsUpToDate`                                                                                                              |
 | Block documents (V20+)        | `ExportAsDocuments`, `ExportBlocksAsDocuments`                                                 |
 | Type documents (V21+)         | `ExportTypeAsDocuments`, `ExportTypesAsDocuments`                                                                                                  |
+| Compare                       | `CompareBlockToFile`, `CompareBlocksToFolder`, `CompareSoftware`                                                                                   |
 | Understand and read (comfort) | `GetPlcSummary`, `ResolveObjectPath`, `WhereUsed`, `FindInCode`, `GetBlockInterface`, `PreviewImport`, `OpenTiaProject`, `ExportPlcAsDocuments`    |
 
-Write tools (49) require `--allow-write`.
+Online tools (3) require `--allow-online`: `GoOnline`, `GoOffline`, and `CompareSoftwareToOnline`, which goes online to the PLC over the
+online access configured in the project, compares, and goes offline again. It never downloads or writes values.
+
+The compare tools normalise SimaticML before diffing: the XML declaration, `<Engineering version>`,
+`<DocumentInfo>`, every `ID` attribute and the block timestamps (`CreationDate`, `ModifiedDate`, ...) are
+ignored and the XML is re-indented. Source texts are compared with line ends and trailing whitespace
+normalised (`ignoreWhitespace` also drops indentation). In the diff `-` is the file on disk, `+` the project.
+
+Write tools (51) require `--allow-write`, including the fork's `CreateBlock` and `ImportAndCompile`. `--allow-download` adds `PreviewDownload` / `Download`, `--allow-hardware` adds `CreateDevice` / `PlugModule`.
 
 | Area                  | Tools                                                                                                                                                                                                                                         |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -117,6 +129,41 @@ Write tools (49) require `--allow-write`.
 
 Paths used by these tools are **root-relative**: `1_Tests/FC_Block_1`, not
 `Program blocks/1_Tests/FC_Block_1`. Use `GetProjectTree` and `GetSoftwareTree` to discover them.
+
+## Plant tools (arteigur fork)
+
+Tools added in this fork for agents that plan and act on a real plant. Each group that reaches past the
+offline project has its own flag, so a client can allow one without the others.
+
+| Area | Tools | Needs |
+| ---- | ----- | ----- |
+| Orientation | `GetSessionContext` - portal, project, unsaved changes, per PLC `softwarePath`, CPU type, online state, last compile | always |
+| Online state | `GetOnlineState`, `GetConnectionTargets` - read the connection settings, never connect | always |
+| Go online | `GoOnline`, `GoOffline` | `--allow-online` |
+| Download | `PreviewDownload` (compile + single-use `confirmToken`, 15 min), `Download` | `--allow-download` |
+| Safe import | `ImportAndCompile` - import files, compile, undo the import on compile errors | `--allow-write` |
+| Blocks | `CreateBlock` - empty OB (program cycle / cyclic interrupt with cycle time / startup), FC or global DB | `--allow-write` |
+| Hardware (read) | `SearchHardwareCatalog`, `GetPlugLocations` | always |
+| Hardware (add) | `CreateDevice`, `PlugModule` | `--allow-write --allow-hardware` |
+
+How the download stays safe:
+
+- `PreviewDownload` sends nothing to the PLC. The token is single use, expires after 15 minutes, and is bound to the
+  open project, PLC, target interface and download options. The tool text tells the agent to get an explicit yes
+  from a human before calling `Download`.
+- `Download` answers TIA Portal's questions by policy and returns every question and answer in `Decisions`:
+  `StopModules` only with `allowStop` (the CPU is then started again by the post-download `StartModules`),
+  `InitializeMemory` only with `allowReinitialize`, `OverwriteSystemData` only for a hardware download, alarm text
+  libraries consistently. Reset module, selective delete, different target, active tests and passwords keep TIA
+  Portal's default, so a download that needs one of them aborts instead of guessing. `Blocking: true` marks the
+  answer that made it abort.
+- Verified so far against a scratch project only: preview, token handling and the policy plumbing. A real download
+  has not been run through this tool yet.
+
+How `ImportAndCompile` rolls back: TIA Portal does not compile inside an Openness transaction, so the blocks the
+files will replace (names read from the files) are exported first, the imports run in one transaction, then the
+PLC compiles. On compile errors the blocks the import created are deleted and the backups imported back.
+`NotRestored` lists any changed block the files did not name.
 
 ## Example Prompts using natural language
 

@@ -2,7 +2,49 @@
 
 ## [Unreleased]
 
+### Added (arteigur fork)
+
+- __`GetSessionContext`__: one read-only call with the attached portal, open project, unsaved changes, and per
+  PLC its `softwarePath`, CPU type identifier, online state and the result of the last `CompilePlcSoftware`
+  through this server, plus which gated tool sets are enabled and the presets. Meant as an agent's first call.
+- __`GetOnlineState`__ and __`GetConnectionTargets`__ (read-only, never connect): the PLC's online state, and
+  the mode / PC interface / target interface combinations TIA Portal offers for reaching it.
+- __`GoOnline`__ / __`GoOffline`__, registered only with the new `--allow-online` flag.
+- __`PreviewDownload`__ / __`Download`__, registered only with the new `--allow-download` flag. The preview
+  compiles and returns a single-use `confirmToken` valid for 15 minutes; `Download` needs it. TIA Portal's
+  pre- and post-download questions are answered by policy and all returned in `Decisions`: the CPU is stopped
+  only with `allowStop` (and started again afterwards), memory is re-initialised only with
+  `allowReinitialize`, system data is overwritten only for a hardware download, and reset / selective delete /
+  passwords are never answered, so TIA Portal aborts instead.
+- __`ImportAndCompile`__ (`--allow-write`): imports one or more `.xml` / `.s7dcl` / `.scl` / `.db` / `.awl` files
+  and compiles inside one explicit transaction; compile errors roll the whole import back. Refuses to run when
+  the project cannot host a transaction, instead of writing without a way back.
+- __`CreateBlock`__ (`--allow-write`): empty OB (program cycle, cyclic interrupt with cycle time, startup), FC
+  or global DB, written as minimal SimaticML and imported with `ImportOptions.None`, so it never replaces a
+  block. Picks the first free number when none is given.
+- __`SearchHardwareCatalog`__ and __`GetPlugLocations`__ (read-only), and __`CreateDevice`__ / __`PlugModule`__,
+  registered only with `--allow-write --allow-hardware`. Additions only: nothing changes or deletes existing
+  hardware or touches network settings.
+
 ### Added
+
+- __Compare tools__ (`McpServer.Compare.cs`, `Portal.Compare.cs`, `CompareText.cs`):
+  - `CompareBlockToFile` (read-only): exports one block in the format of a file on disk (`.xml` SimaticML,
+    `.s7dcl`/`.s7res` documents, `.scl`/`.db`/`.awl` source, by extension) into a scratch folder and returns a
+    unified diff with `identical`, `addedLines`, `removedLines`, `changedLines` and `hunks`. SimaticML is
+    normalised first: XML declaration, `<Engineering>`, `<DocumentInfo>`, `ID` attributes and block
+    timestamps are ignored. Optional `blockPath` (default: the block named in the file), `ignoreWhitespace`,
+    `contextLines`, `maxChars`.
+  - `CompareBlocksToFolder` (read-only): the same for every block file in a folder (`recursive` optional),
+    with status identical / different / missingInProject / missingOnDisk / skipped / error per block.
+  - `CompareSoftware` (read-only, offline): `PlcSoftware.CompareTo` against another PLC software in the open
+    project, another open project, or a project file opened as a secondary project for the call (and closed
+    again; never upgraded or saved). Returns the compare tree flattened to (path, state), identical
+    elements left out unless `includeIdentical`.
+  - `CompareSoftwareToOnline`: `PlcSoftware.CompareToOnline`. Goes online (`OnlineProvider.GoOnline`) when
+    needed and offline again afterwards, reports the online state before and after; never downloads or
+    writes values. Registered only with the new `--allow-online` flag (`CliOptions.AllowOnline`,
+    `[OnlineTool]`, `OnlinePolicy`).
 
 - __`ExportOpcUaXml`__: exports the OPC UA data of one PLC as `<exportPath>/<softwarePath>/OPC UA/<PLC name>.xml`
   (`OpcUaExportProvider.Export`, found through `Project.HwUtilities`). Read-only with respect to the project, so

@@ -12,6 +12,9 @@ namespace TiaMcpServer.Siemens
         RenameFailed,
         NotSupported,
         WriteDisabled,
-        CommitFailed
+        CommitFailed,
+        OnlineFailed,
+        DownloadFailed,
+        HardwareFailed
     }
 }
