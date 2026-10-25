@@ -31,7 +31,7 @@ A MCP server which connects to Siemens TIA Portal.
 | `--preserve-path`         | Flag: `preservePath` defaults to `true` for the export tools. See below.              |
 | `--with-dependencies`     | Flag: `withDependencies` defaults to `true` for the `ExportSource*` tools. See below. |
 | `--allow-write`           | Register the project-mutating tools. Omitted by default; see below.                   |
-| `--allow-online`          | Register `GoOnline` / `GoOffline`, which connect to the real PLC.                     |
+| `--allow-online`          | Register `GoOnline` / `GoOffline` and `CompareSoftwareToOnline`, which connect to the real PLC. Never downloads. |
 | `--allow-download`        | Register `PreviewDownload` / `Download`. See [Plant tools](#plant-tools-arteigur-fork). |
 | `--allow-hardware`        | With `--allow-write`: register `CreateDevice` / `PlugModule`.                          |
 
@@ -78,7 +78,7 @@ To enable write mode, add the argument to your client configuration, for example
 
 ## Tools
 
-Read-only tools (66) are always available.
+Read-only tools (76) are always available, including the fork's `GetSessionContext`, `GetOnlineState`, `GetConnectionTargets`, `SearchHardwareCatalog` and `GetPlugLocations` (see [Plant tools](#plant-tools-arteigur-fork)).
 
 | Area                          | Tools                                                                                                                                              |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -97,9 +97,18 @@ Read-only tools (66) are always available.
 | Multiuser                     | `GetMarkedObjects`, `CheckIsUpToDate`                                                                                                              |
 | Block documents (V20+)        | `ExportAsDocuments`, `ExportBlocksAsDocuments`                                                 |
 | Type documents (V21+)         | `ExportTypeAsDocuments`, `ExportTypesAsDocuments`                                                                                                  |
+| Compare                       | `CompareBlockToFile`, `CompareBlocksToFolder`, `CompareSoftware`                                                                                   |
 | Understand and read (comfort) | `GetPlcSummary`, `ResolveObjectPath`, `WhereUsed`, `FindInCode`, `GetBlockInterface`, `PreviewImport`, `OpenTiaProject`, `ExportPlcAsDocuments`    |
 
-Write tools (49) require `--allow-write`.
+Online tools (3) require `--allow-online`: `GoOnline`, `GoOffline`, and `CompareSoftwareToOnline`, which goes online to the PLC over the
+online access configured in the project, compares, and goes offline again. It never downloads or writes values.
+
+The compare tools normalise SimaticML before diffing: the XML declaration, `<Engineering version>`,
+`<DocumentInfo>`, every `ID` attribute and the block timestamps (`CreationDate`, `ModifiedDate`, ...) are
+ignored and the XML is re-indented. Source texts are compared with line ends and trailing whitespace
+normalised (`ignoreWhitespace` also drops indentation). In the diff `-` is the file on disk, `+` the project.
+
+Write tools (51) require `--allow-write`, including the fork's `CreateBlock` and `ImportAndCompile`. `--allow-download` adds `PreviewDownload` / `Download`, `--allow-hardware` adds `CreateDevice` / `PlugModule`.
 
 | Area                  | Tools                                                                                                                                                                                                                                         |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

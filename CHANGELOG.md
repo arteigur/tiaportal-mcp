@@ -28,6 +28,24 @@
 
 ### Added
 
+- __Compare tools__ (`McpServer.Compare.cs`, `Portal.Compare.cs`, `CompareText.cs`):
+  - `CompareBlockToFile` (read-only): exports one block in the format of a file on disk (`.xml` SimaticML,
+    `.s7dcl`/`.s7res` documents, `.scl`/`.db`/`.awl` source, by extension) into a scratch folder and returns a
+    unified diff with `identical`, `addedLines`, `removedLines`, `changedLines` and `hunks`. SimaticML is
+    normalised first: XML declaration, `<Engineering>`, `<DocumentInfo>`, `ID` attributes and block
+    timestamps are ignored. Optional `blockPath` (default: the block named in the file), `ignoreWhitespace`,
+    `contextLines`, `maxChars`.
+  - `CompareBlocksToFolder` (read-only): the same for every block file in a folder (`recursive` optional),
+    with status identical / different / missingInProject / missingOnDisk / skipped / error per block.
+  - `CompareSoftware` (read-only, offline): `PlcSoftware.CompareTo` against another PLC software in the open
+    project, another open project, or a project file opened as a secondary project for the call (and closed
+    again; never upgraded or saved). Returns the compare tree flattened to (path, state), identical
+    elements left out unless `includeIdentical`.
+  - `CompareSoftwareToOnline`: `PlcSoftware.CompareToOnline`. Goes online (`OnlineProvider.GoOnline`) when
+    needed and offline again afterwards, reports the online state before and after; never downloads or
+    writes values. Registered only with the new `--allow-online` flag (`CliOptions.AllowOnline`,
+    `[OnlineTool]`, `OnlinePolicy`).
+
 - __`ExportOpcUaXml`__: exports the OPC UA data of one PLC as `<exportPath>/<softwarePath>/OPC UA/<PLC name>.xml`
   (`OpcUaExportProvider.Export`, found through `Project.HwUtilities`). Read-only with respect to the project, so
   it is not gated behind `--allow-write`; it fails with `NotSupported` when TIA Portal does not offer the OPC UA
