@@ -31,6 +31,7 @@ A MCP server which connects to Siemens TIA Portal.
 | `--preserve-path`         | Flag: `preservePath` defaults to `true` for the export tools. See below.              |
 | `--with-dependencies`     | Flag: `withDependencies` defaults to `true` for the `ExportSource*` tools. See below. |
 | `--allow-write`           | Register the project-mutating tools. Omitted by default; see below.                   |
+| `--allow-online`          | Register the tools that go online to the PLC (`CompareSoftwareToOnline`). Never downloads. |
 
 ## Presetting tool arguments
 
@@ -75,7 +76,7 @@ To enable write mode, add the argument to your client configuration, for example
 
 ## Tools
 
-Read-only tools (66) are always available.
+Read-only tools (69) are always available.
 
 | Area                          | Tools                                                                                                                                              |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -94,7 +95,16 @@ Read-only tools (66) are always available.
 | Multiuser                     | `GetMarkedObjects`, `CheckIsUpToDate`                                                                                                              |
 | Block documents (V20+)        | `ExportAsDocuments`, `ExportBlocksAsDocuments`                                                 |
 | Type documents (V21+)         | `ExportTypeAsDocuments`, `ExportTypesAsDocuments`                                                                                                  |
+| Compare                       | `CompareBlockToFile`, `CompareBlocksToFolder`, `CompareSoftware`                                                                                   |
 | Understand and read (comfort) | `GetPlcSummary`, `ResolveObjectPath`, `WhereUsed`, `FindInCode`, `GetBlockInterface`, `PreviewImport`, `OpenTiaProject`, `ExportPlcAsDocuments`    |
+
+Online tools (1) require `--allow-online`: `CompareSoftwareToOnline` goes online to the PLC over the
+online access configured in the project, compares, and goes offline again. It never downloads or writes values.
+
+The compare tools normalise SimaticML before diffing: the XML declaration, `<Engineering version>`,
+`<DocumentInfo>`, every `ID` attribute and the block timestamps (`CreationDate`, `ModifiedDate`, ...) are
+ignored and the XML is re-indented. Source texts are compared with line ends and trailing whitespace
+normalised (`ignoreWhitespace` also drops indentation). In the diff `-` is the file on disk, `+` the project.
 
 Write tools (49) require `--allow-write`.
 

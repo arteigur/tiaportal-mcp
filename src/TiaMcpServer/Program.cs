@@ -25,6 +25,7 @@ namespace TiaMcpServer
             // Set before the --doctor branch below, which reports the write mode, and before the
             // host registers its tool types.
             WritePolicy.AllowWrite = options.AllowWrite;
+            OnlinePolicy.AllowOnline = options.AllowOnline;
 
             // Before the host registers its tool types: Apply reads the presets.
             ToolDefaults.Configure(options);
@@ -90,6 +91,7 @@ namespace TiaMcpServer
                 .GetMethods(BindingFlags.Public | BindingFlags.Static)
                 .Where(m => m.GetCustomAttribute<global::ModelContextProtocol.Server.McpServerToolAttribute>() != null)
                 .Where(m => allowWrite || m.GetCustomAttribute<WriteToolAttribute>() == null)
+                .Where(m => OnlinePolicy.AllowOnline || m.GetCustomAttribute<OnlineToolAttribute>() == null)
                 .Select(m => ToolDefaults.Apply(m, PortalSelection.Apply(m, global::ModelContextProtocol.Server.McpServerTool.Create(m))))
                 .ToList();
         }
