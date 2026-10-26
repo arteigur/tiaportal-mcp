@@ -24,6 +24,7 @@
 - __`ImportAndCompile` warnings__: the result has a `Warnings` list (up to 100) next to the error `Messages`.
 - __`CreateDeviceGroup`__ (`--allow-write`): creates a device group (project tree folder) below the project root
   or an existing group, nested by path such as `Plant/House`. Only the folder; devices are not moved.
+  __`DeleteDeviceGroup`__ deletes an empty device group only; a group holding a device or a sub group is refused.
 - __`CompilePlcSoftware rebuildAll`__: compiles every block on its own, then the PLC software, so the warnings of
   an already compiled PLC are reported.
 

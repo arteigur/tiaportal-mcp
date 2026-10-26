@@ -93,6 +93,51 @@ namespace TiaMcpServer.Siemens
                 ("parentGroupPath", parentGroupPath), ("name", name));
         }
 
+        /// <summary>
+        /// Deletes an empty device group. A group that still holds a device or a sub group is
+        /// refused: deleting it would delete the devices with it, and hardware is only ever added
+        /// by these tools, never removed.
+        /// </summary>
+        public void DeleteDeviceGroup(string groupPath)
+        {
+            Operation.Run(_logger, nameof(DeleteDeviceGroup), PortalErrorCode.DeleteFailed,
+                () =>
+                {
+                    if (_project is null)
+                    {
+                        throw new PortalException(PortalErrorCode.InvalidState, "No project is open. Use 'OpenProject' or 'OpenTiaProject' first.");
+                    }
+
+                    var segments = (groupPath ?? string.Empty).Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+                    if (segments.Length == 0)
+                    {
+                        throw new PortalException(PortalErrorCode.InvalidParams, "Pass the path of the device group to delete, e.g. 'Plant/House'.");
+                    }
+
+                    var parentPath = string.Join("/", segments, 0, segments.Length - 1);
+                    var group = GetDeviceGroupComposition(parentPath)?
+                        .FirstOrDefault(g => g.Name.Equals(segments[segments.Length - 1].Trim(), StringComparison.OrdinalIgnoreCase))
+                        ?? throw new PortalException(PortalErrorCode.NotFound,
+                            $"Device group not found at '{groupPath}'. 'GetProjectTree' shows the groups as [Group] / [Subgroup].");
+
+                    var devices = group.Devices.Select(d => d.Name).ToList();
+                    var subgroups = group.Groups.Select(g => g.Name).ToList();
+
+                    if (devices.Count > 0 || subgroups.Count > 0)
+                    {
+                        throw new PortalException(PortalErrorCode.InvalidParams,
+                            $"Device group '{groupPath}' is not empty, so it was not deleted" +
+                            (devices.Count > 0 ? $"; devices: {string.Join(", ", devices)}" : string.Empty) +
+                            (subgroups.Count > 0 ? $"; sub groups: {string.Join(", ", subgroups)} (delete those first)" : string.Empty) +
+                            ". Move devices out in TIA Portal; this tool never deletes hardware.");
+                    }
+
+                    group.Delete();
+                },
+                ("groupPath", groupPath));
+        }
+
         /// <summary>The sub groups of the device group at the path; the project's own groups for an empty path.</summary>
         private DeviceUserGroupComposition? GetDeviceGroupComposition(string groupPath)
         {

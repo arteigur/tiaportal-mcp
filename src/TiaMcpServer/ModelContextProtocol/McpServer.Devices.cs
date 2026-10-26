@@ -142,6 +142,19 @@ namespace TiaMcpServer.ModelContextProtocol
             });
         }
 
+        [WriteTool]
+        [McpServerTool(Name = "DeleteDeviceGroup", Title = "Delete empty device group", Destructive = true, Idempotent = true, OpenWorld = false, UseStructuredContent = true),
+         Description("Delete an empty device group (a folder in the project tree). A group that still holds a device or a sub group is refused, so no hardware is ever deleted; delete sub groups first")]
+        public static ResponseDeleted DeleteDeviceGroup(
+            [Description("groupPath: path of the device group to delete, e.g. 'Plant/House'")] string groupPath)
+        {
+            return Guarded(nameof(DeleteDeviceGroup), () =>
+            {
+                Portal.DeleteDeviceGroup(groupPath);
+                return Deleted("Device group", groupPath);
+            });
+        }
+
         private static ResponseDeviceInfo DescribeDevice(Device device, bool withItems)
         {
             string? typeIdentifier;
