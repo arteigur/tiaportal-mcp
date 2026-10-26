@@ -396,7 +396,8 @@ share its attached TIA Portal instance and presets.
 - **Run it in the logged-on user's session**, where TIA Portal runs: from a terminal, a shortcut or a
   Task Scheduler task "at log on" with "run only when user is logged on". Not as a Windows service:
   Openness attaches to TIA Portal in the user's session. TIA Portal asks once to allow Openness access
-  for each new build of the exe.
+  for each new build of the exe; until someone answers that dialog in the VM, `Connect` waits (the
+  dialog can sit behind other windows).
 - The optional GET event stream is not offered (405); every response travels on its POST.
   A session unused for 8 hours is closed; the client then initializes a new one.
 
