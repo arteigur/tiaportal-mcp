@@ -123,6 +123,15 @@ Write tools (51) require `--allow-write`, including the fork's `CreateBlock` and
 | XML and documents     | `ImportXmlBlock`, `ImportXmlType`, `ImportFromDocuments` (V20+), `ImportBlocksFromDocuments` (V20+) |
 | Multiuser             | `CommitChanges` (commits the local session to the server and closes the session)                                                                                                                                                              |
 
+`GetDeviceInfo` lists the device's items (rack, CPU, modules) with position, type identifier, order number and
+I/O addresses (`StartAddress`, `LengthBits`, and the byte range such as `%QB96..%QB99`), each address naming the
+sub item that holds it. `GetDeviceItemInfo` does the same for one item and takes paths such as
+`House station/Rack_0/AQ 2x14BIT_House` or `House station/AQ 2x14BIT_House`.
+
+`CompilePlcSoftware` compiles changes only, like TIA Portal's "Compile > Software (only changes)", so an already
+compiled PLC reports none of its warnings again. Pass `rebuildAll: true` to compile every program block on its own
+and then the PLC software; all their messages are returned. Openness has no rebuild-all call of its own.
+
 `GetSoftwareTree` accepts a `sections` argument - any comma separated subset of
 `blocks,types,tags,watch,sources`, default `all` - to keep the output small on a large PLC.
 `GetCrossReferences` accepts `maxDepth` (1-3, default 1) for the same reason.
@@ -142,7 +151,7 @@ offline project has its own flag, so a client can allow one without the others.
 | Go online | `GoOnline`, `GoOffline` | `--allow-online` |
 | Download | `PreviewDownload` (compile + single-use `confirmToken`, 15 min), `Download` | `--allow-download` |
 | Safe import | `ImportAndCompile` - import files, compile, undo the import on compile errors | `--allow-write` |
-| Blocks | `CreateBlock` - empty OB (program cycle / cyclic interrupt with cycle time / startup), FC or global DB | `--allow-write` |
+| Blocks | `CreateBlock` - empty OB (program cycle, startup, time of day, time delay, cyclic interrupt with cycle time, hardware, time error, diagnostic error, pull/plug, rack failure), FC or global DB | `--allow-write` |
 | Hardware (read) | `SearchHardwareCatalog`, `GetPlugLocations` | always |
 | Hardware (add) | `CreateDevice`, `PlugModule` | `--allow-write --allow-hardware` |
 

@@ -52,13 +52,28 @@ namespace TiaMcpServer.ModelContextProtocol
         }
 
         [McpServerTool(Name = "CompilePlcSoftware", Title = "Compile PLC software", Destructive = false, Idempotent = true, OpenWorld = false, UseStructuredContent = true),
-         Description("Compile the whole PLC software and report every compiler message with the object it belongs to, so errors can be fixed without re-reading the whole PLC. Warnings are reported as a successful compile with detail; errors set meta.success to false and the call still returns every message. To compile a single block use 'CompileCodeBlock'")]
+         Description("Compile the whole PLC software and report every compiler message with the object it belongs to, so errors can be fixed without re-reading the whole PLC. Warnings are reported as a successful compile with detail; errors set meta.success to false and the call still returns every message. A plain compile only compiles changes, so it reports no warnings for blocks compiled earlier; pass rebuildAll=true to compile every block and get all warnings. To compile a single block use 'CompileCodeBlock'")]
         public static ResponseCompile CompilePlcSoftware(
             [Description("softwarePath: defines the path in the project structure to the PLC software")] string softwarePath,
-            [Description("password: the password to access adminsitration, default: no password")] string password = "")
+            [Description("password: the password to access adminsitration, default: no password")] string password = "",
+            [Description("rebuildAll: compile every program block on its own and then the PLC software, so the messages of blocks compiled earlier are reported too (slower). Default false: compile changes only")] bool rebuildAll = false)
         {
             try
             {
+                if (rebuildAll)
+                {
+                    var results = Portal.RebuildPlcSoftware(softwarePath, password);
+
+                    if (results == null)
+                    {
+                        throw new McpException(
+                            $"Failed rebuilding software '{softwarePath}'. Check that the path names a PLC software " +
+                            "('GetProjectTree' lists them) and, for a safety program, that 'password' is correct.");
+                    }
+
+                    return BuildRebuildResponse(results, softwarePath);
+                }
+
                 var result = Portal.CompilePlcSoftware(softwarePath, password);
 
                 if (result == null)
@@ -141,6 +156,80 @@ namespace TiaMcpServer.ModelContextProtocol
                 }
             };
         }
+
+        /// <summary>
+        /// One response for a rebuild: the messages of every block compile and the final PLC
+        /// software compile, each block's messages under a node naming the block. Counts are
+        /// summed over the block compiles and the software compile.
+        /// </summary>
+        private static ResponseCompile BuildRebuildResponse(List<(string Target, CompilerResult Result)> results, string target)
+        {
+            var messages = new List<CompileMessage>();
+            var errors = 0;
+            var warnings = 0;
+            var worst = CompilerResultState.Success;
+
+            foreach (var (blockPath, result) in results)
+            {
+                errors += result.ErrorCount;
+                warnings += result.WarningCount;
+
+                if (Severity(result.State) > Severity(worst))
+                {
+                    worst = result.State;
+                }
+
+                // Blocks without messages would only add noise.
+                if (result.ErrorCount == 0 && result.WarningCount == 0)
+                {
+                    continue;
+                }
+
+                messages.AddRange(FlattenCompilerMessages(result.Messages, 0));
+            }
+
+            var state = worst.ToString();
+
+            if (worst == CompilerResultState.Error)
+            {
+                var offenders = messages
+                    .Where(m => string.Equals(m.State, nameof(CompilerResultState.Error), StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(m.Description))
+                    .Take(5)
+                    .Select(m => $"{m.Path}: {m.Description}");
+
+                throw new McpException(
+                    $"Rebuilding '{target}' found {errors} error(s). " +
+                    string.Join(" | ", offenders));
+            }
+
+            return new ResponseCompile
+            {
+                Message = $"Rebuilding '{target}' ({results.Count - 1} block(s), then the PLC software) finished with state '{state}': " +
+                          $"{errors} error(s), {warnings} warning(s)",
+                State = state,
+                ErrorCount = errors,
+                WarningCount = warnings,
+                Messages = messages,
+                Meta = new JsonObject
+                {
+                    ["timestamp"] = DateTime.Now,
+                    ["success"] = true,
+                    ["state"] = state,
+                    ["errorCount"] = errors,
+                    ["warningCount"] = warnings,
+                    ["messageCount"] = messages.Count,
+                    ["rebuildAll"] = true
+                }
+            };
+        }
+
+        private static int Severity(CompilerResultState state) => state switch
+        {
+            CompilerResultState.Error => 3,
+            CompilerResultState.Warning => 2,
+            CompilerResultState.Information => 1,
+            _ => 0
+        };
 
         /// <summary>
         /// Walks the recursive CompilerResultMessage tree depth-first. Openness nests messages

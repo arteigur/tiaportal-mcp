@@ -133,53 +133,30 @@ namespace TiaMcpServer.Siemens
                 return null;
             }
 
-            // A device name can itself contain '/', so check for such a device before splitting the path
-            var deviceItem = GetDeviceItemBySlashDeviceName(deviceItemPath.Trim('/'));
-            if (deviceItem != null)
-            {
-                return deviceItem;
-            }
+            var path = deviceItemPath.Trim().Trim('/');
 
-            // Split the device path by '/' to get each device name
-            var pathSegments = deviceItemPath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+            // The device part of the path is matched as a whole name (a device name can contain
+            // '/', e.g. 'S7-1500/ET200MP station_1'), optionally preceded by its group path. The
+            // longest match wins; the rest of the path names device items below that device.
+            var candidates = EnumerateAllDevices()
+                .SelectMany(d => new[] { (Device: d, Prefix: GetDevicePath(d)), (Device: d, Prefix: d.Name) })
+                .Where(c => path.StartsWith(c.Prefix + "/", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(c => c.Prefix.Length);
 
-            deviceItem = GetDeviceItemBySegments(pathSegments);
-            if (deviceItem != null)
+            foreach (var (device, prefix) in candidates)
             {
-                return deviceItem;
-            }
-
-            // devices below the "Ungrouped devices" system group are not part of devices or groups
-            var ungroupedDevices = _project.UngroupedDevicesGroup?.Devices;
-            if (ungroupedDevices != null)
-            {
-                for (int index = 0; index < pathSegments.Length && deviceItem is null; index++)
+                var deviceItem = FindDeviceItem(device, path.Substring(prefix.Length + 1));
+                if (deviceItem != null)
                 {
-                    deviceItem = GetDeviceItemFromDevice(pathSegments, ungroupedDevices, index);
+                    return deviceItem;
                 }
             }
 
-            return deviceItem;
-        }
-
-        /// <summary>
-        /// Handles paths like 'S7-1500/ET200MP station_1/PLC_1' or 'Group1/S7-1500/ET200MP station_1/PLC_1'
-        /// where the device name itself contains '/': the device name is looked up as a whole
-        /// (at the start of the path or after a '/') and the rest of the path names the device item.
-        /// </summary>
-        private DeviceItem? GetDeviceItemBySlashDeviceName(string path)
-        {
-            foreach (var device in EnumerateAllDevices().Where(d => d.Name.IndexOf('/') >= 0))
+            // No device named: a hardware PLC's device name ('S7-1500/ET200MP station_1') is not
+            // shown in the TIA Portal IDE, so a path may start at the device item itself.
+            foreach (var device in EnumerateAllDevices())
             {
-                var prefix = device.Name + "/";
-                var start = path.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
-                if (start < 0 || (start > 0 && path[start - 1] != '/'))
-                {
-                    continue;
-                }
-
-                var itemName = path.Substring(start + prefix.Length);
-                var deviceItem = device.DeviceItems.FirstOrDefault(di => di.Name.Equals(itemName, StringComparison.OrdinalIgnoreCase));
+                var deviceItem = FindDeviceItem(device, path);
                 if (deviceItem != null)
                 {
                     return deviceItem;
@@ -189,80 +166,73 @@ namespace TiaMcpServer.Siemens
             return null;
         }
 
-        private DeviceItem? GetDeviceItemBySegments(string[] pathSegments)
+        /// <summary>
+        /// Walks the '/' separated item path below a device. Each segment is looked up in the
+        /// current item's DeviceItems and, for a rack, its Items (the modules plugged into it), so
+        /// both 'Rack_0/AQ 2x14BIT_House' and 'AQ 2x14BIT_House' find a module of an S7-1200.
+        /// An item name may itself contain '/' ('AI 2/AQ 2_1'), so longer names are tried first.
+        /// </summary>
+        private static DeviceItem? FindDeviceItem(Device device, string itemPath)
         {
-            if (_project is null || _project.Devices == null)
-            {
-                return null;
-            }
+            var segments = itemPath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
 
-            DeviceItem? deviceItem = null;
-
-            // initial devices and groups
-            var devices = _project.Devices;
-            var groups = _project.DeviceGroups;
-
-            for (int index = 0; index < pathSegments.Length; index++)
-            {
-                deviceItem = GetDeviceItemFromDevice(pathSegments, devices, index);
-
-                if (deviceItem is null)
-                {
-                    // search in groups
-                    var group = groups?.FirstOrDefault(g => g.Name.Equals(pathSegments[index], StringComparison.OrdinalIgnoreCase));
-                    if (group is not null)
-                    {
-                        devices = group.Devices;
-                        if (devices != null)
-                        {
-                            deviceItem = GetDeviceItemFromDevice(pathSegments, devices, index + 1);
-                        }
-
-                        if (deviceItem is not null)
-                        {
-                            return deviceItem;
-                        }
-
-                        // not found, but on the path
-                        groups = group.Groups;
-                        devices = group.Devices;
-                    }
-                }
-                else if (deviceItem is not null)
-                {
-                    return deviceItem;
-                }
-            }
-
-            return deviceItem;
+            return segments.Length == 0 ? null : FindDeviceItem(device.DeviceItems, null, segments, 0);
         }
 
-        private static DeviceItem? GetDeviceItemFromDevice(string[] pathSegments, DeviceComposition? devices, int index)
+        private static DeviceItem? FindDeviceItem(DeviceItemComposition? deviceItems, DeviceItemAssociation? items, string[] segments, int index)
         {
-            string segment = pathSegments[index];
-            string nextSegment = index + 1 < pathSegments.Length ? pathSegments[index + 1] : string.Empty;
+            var children = (deviceItems ?? Enumerable.Empty<DeviceItem>())
+                .Concat(items ?? Enumerable.Empty<DeviceItem>())
+                .ToList();
 
-            DeviceItem? deviceItem = null;
-
-            // a pc based plc has a Device.Name = 'PC-System_1' or something like that, which is visible in the TIA-Portal IDE
-            // use segment to find device
-            var device = devices.FirstOrDefault(d => d.Name.Equals(segment, StringComparison.OrdinalIgnoreCase));
-            if (device != null)
+            for (var count = segments.Length - index; count >= 1; count--)
             {
-                // then use next segment to find device item
-                deviceItem = device.DeviceItems.FirstOrDefault(di => di.Name.Equals(nextSegment, StringComparison.OrdinalIgnoreCase));
+                var name = string.Join("/", segments, index, count);
 
+                foreach (var child in children.Where(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    if (index + count == segments.Length)
+                    {
+                        return child;
+                    }
+
+                    var found = FindDeviceItem(child.DeviceItems, child.Items, segments, index + count);
+                    if (found != null)
+                    {
+                        return found;
+                    }
+                }
             }
 
-            // a hardware plc has a Device.Name = 'S7-1500/ET200MP-Station_1' or something like that, which is not visible in the TIA-Portal IDE
-            if (device == null)
+            return null;
+        }
+
+        /// <summary>The device name, preceded by its device group path, e.g. 'Group1/PLC_1'.</summary>
+        public static string GetDevicePath(Device device)
+        {
+            var path = device.Name;
+
+            for (var parent = device.Parent; parent is DeviceUserGroup group; parent = group.Parent)
             {
-                deviceItem = devices
-                .SelectMany(d => d.DeviceItems)
-                .FirstOrDefault(di => di.Name.Equals(segment, StringComparison.OrdinalIgnoreCase));
+                path = group.Name + "/" + path;
             }
 
-            return deviceItem;
+            return path;
+        }
+
+        /// <summary>Path of a device item as the device tools take it: device path, then the item names below it.</summary>
+        public static string GetDeviceItemPath(DeviceItem deviceItem)
+        {
+            var path = deviceItem.Name;
+            IEngineeringObject? parent = deviceItem.Parent;
+
+            while (parent is DeviceItem parentItem)
+            {
+                path = parentItem.Name + "/" + path;
+                parent = parentItem.Parent;
+            }
+
+            return parent is Device device ? GetDevicePath(device) + "/" + path : path;
         }
 
         #endregion

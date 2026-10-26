@@ -11,6 +11,7 @@ using Siemens.Engineering.SW.Types;
 using Siemens.Engineering.SW.WatchAndForceTables;
 using Siemens.Engineering.Safety;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Security;
@@ -68,6 +69,52 @@ namespace TiaMcpServer.Siemens
             }
 
             return null; // "Error";
+        }
+
+        /// <summary>
+        /// "Rebuild all": compiles every program block on its own, then the PLC software. Openness
+        /// has no rebuild-all call - ICompilable.Compile on the PLC software only compiles what
+        /// changed, so a PLC that is already compiled reports none of its warnings again. A block
+        /// compiled on its own reports its messages every time. Returns the PLC software result
+        /// last; null when the path is not a PLC software or the safety login fails.
+        /// </summary>
+        public List<(string Target, CompilerResult Result)>? RebuildPlcSoftware(string softwarePath, string password = "")
+        {
+            _logger?.LogInformation($"Rebuilding software by path: {softwarePath}");
+
+            if (IsProjectNull())
+            {
+                return null;
+            }
+
+            var softwareContainer = GetSoftwareContainer(softwarePath);
+
+            if (!TryLoginSafetyOffline(softwareContainer, password) || softwareContainer?.Software is not PlcSoftware plcSoftware)
+            {
+                return null;
+            }
+
+            var results = new List<(string Target, CompilerResult Result)>();
+
+            foreach (var block in GetBlocks(softwarePath))
+            {
+                var result = CompileService(block);
+
+                if (result != null)
+                {
+                    results.Add((GetBlockPath(block), result));
+                }
+            }
+
+            var software = CompileService(plcSoftware);
+
+            if (software != null)
+            {
+                RecordCompile(softwarePath, software);
+                results.Add((softwarePath, software));
+            }
+
+            return results;
         }
 
         public CompilerResult? CompileCodeBlock(string softwarePath, string blockPath, string password = "")

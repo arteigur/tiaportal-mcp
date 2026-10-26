@@ -98,8 +98,10 @@ namespace TiaMcpServer.Siemens
             Exception ex,
             (string Key, object? Value)[] context)
         {
+            // TIA Portal's own message (and its detail messages) is what tells the caller what to
+            // fix, e.g. "RETAIN is not allowed in a standard DB"; a bare "failed" does not.
             var pex = ex as PortalException
-                      ?? new PortalException(failCode, $"{operation} failed", null, ex);
+                      ?? new PortalException(failCode, $"{operation} failed: {ImportErrors.Describe(ex)}", null, ex);
 
             // Inner frames win: an inner Run already recorded the most specific context.
             foreach (var (key, value) in context)

@@ -105,7 +105,8 @@ namespace TiaMcpServer.Siemens
                         result.CompileState = compile.State.ToString();
                         result.CompileErrors = compile.ErrorCount;
                         result.CompileWarnings = compile.WarningCount;
-                        result.Messages = FlattenErrorMessages(compile.Messages).Take(50).ToList();
+                        result.Messages = FlattenMessages(compile.Messages, CompilerResultState.Error).Take(50).ToList();
+                        result.Warnings = FlattenMessages(compile.Messages, CompilerResultState.Warning).Take(100).ToList();
 
                         if (compile.State != CompilerResultState.Error || !rollbackOnError)
                         {
@@ -207,7 +208,12 @@ namespace TiaMcpServer.Siemens
             }
         }
 
-        private static IEnumerable<string> FlattenErrorMessages(CompilerResultMessageComposition? messages)
+        /// <summary>
+        /// The texts of the compiler messages in one state ('path: description'), depth first.
+        /// Only messages with a description count: TIA Portal also marks the parent nodes (the
+        /// PLC, 'Program blocks', a block) with the worst state of their children.
+        /// </summary>
+        private static IEnumerable<string> FlattenMessages(CompilerResultMessageComposition? messages, CompilerResultState state)
         {
             if (messages == null)
             {
@@ -216,12 +222,12 @@ namespace TiaMcpServer.Siemens
 
             foreach (CompilerResultMessage message in messages)
             {
-                if (message.State == CompilerResultState.Error && !string.IsNullOrWhiteSpace(message.Description))
+                if (message.State == state && !string.IsNullOrWhiteSpace(message.Description))
                 {
                     yield return string.IsNullOrWhiteSpace(message.Path) ? message.Description : $"{message.Path}: {message.Description}";
                 }
 
-                foreach (var child in FlattenErrorMessages(message.Messages))
+                foreach (var child in FlattenMessages(message.Messages, state))
                 {
                     yield return child;
                 }
@@ -237,6 +243,8 @@ namespace TiaMcpServer.Siemens
         public int CompileWarnings { get; set; }
         /// <summary>Compiler error messages, at most 50.</summary>
         public List<string> Messages { get; set; } = new List<string>();
+        /// <summary>Compiler warning messages, at most 100. CompilePlcSoftware with rebuildAll lists them for blocks compiled earlier.</summary>
+        public List<string> Warnings { get; set; } = new List<string>();
         /// <summary>True when the compile had errors and the import was undone.</summary>
         public bool RolledBack { get; set; }
         /// <summary>Existing blocks exported before the import, to restore on rollback.</summary>
