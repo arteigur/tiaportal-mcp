@@ -16,6 +16,8 @@ namespace TiaMcpServer
         public string? ExportPath { get; set; } // preset for the 'exportPath' tool argument
         public bool PreservePath { get; set; } // preset for the 'preservePath' tool argument (only when true)
         public bool WithDependencies { get; set; } // preset for the 'withDependencies' tool argument (only when true)
+        public string? Http { get; set; } // serve over Streamable HTTP at this URL instead of stdio, e.g. http://+:8765/mcp
+        public string? HttpToken { get; set; } // bearer token for '--http'; TIA_MCP_HTTP_TOKEN is preferred
 
         /// <summary>The options this process was started with; set by Program.Main so the Doctor tool can report them.</summary>
         public static CliOptions Current { get; set; } = new CliOptions();
@@ -95,6 +97,22 @@ namespace TiaMcpServer
                         options.WithDependencies = ReadFlag(args, ref i);
                         break;
 
+                    case "-http":
+                    case "--http":
+                        if (i + 1 < args.Length && !string.IsNullOrWhiteSpace(args[i + 1]))
+                        {
+                            options.Http = args[++i];
+                        }
+                        break;
+
+                    case "-http-token":
+                    case "--http-token":
+                        if (i + 1 < args.Length && !string.IsNullOrWhiteSpace(args[i + 1]))
+                        {
+                            options.HttpToken = args[++i];
+                        }
+                        break;
+
                     case "-logging":
                     case "--logging":
                         if (i + 1 < args.Length && int.TryParse(args[i + 1], out int l))
@@ -129,7 +147,9 @@ namespace TiaMcpServer
                 new("--allow-download", AllowDownload ? "true" : "false"),
                 new("--allow-hardware", AllowHardware ? "true" : "false"),
                 new("--preserve-path", PreservePath ? "true" : "false"),
-                new("--with-dependencies", WithDependencies ? "true" : "false")
+                new("--with-dependencies", WithDependencies ? "true" : "false"),
+                new("--http", Http ?? notSet),
+                new("--http-token", string.IsNullOrEmpty(HttpToken) ? notSet : "(set)")
             };
         }
 
