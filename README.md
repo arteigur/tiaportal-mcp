@@ -34,6 +34,8 @@ A MCP server which connects to Siemens TIA Portal.
 | `--allow-online`          | Register `GoOnline` / `GoOffline` and `CompareSoftwareToOnline`, which connect to the real PLC. Never downloads. |
 | `--allow-download`        | Register `PreviewDownload` / `Download`. See [Plant tools](#plant-tools-arteigur-fork). |
 | `--allow-hardware`        | With `--allow-write`: register `CreateDevice` / `PlugModule`.                          |
+| `--http <url>`            | Serve over Streamable HTTP at this URL instead of stdio, e.g. `http://+:8765/mcp`. See [Remote access over HTTP](#remote-access-over-http-arteigur-fork). |
+| `--http-token <token>`    | Bearer token for `--http`. Prefer the environment variable `TIA_MCP_HTTP_TOKEN`, which does not show in the process list. |
 
 ## Presetting tool arguments
 
@@ -372,10 +374,86 @@ These are not gaps in this server - the underlying API offers no operation for t
 - Available via SDK: `stream` (custom streams)
   - The SDK exposes `WithStreamServerTransport(Stream input, Stream output)` which can be used to host over TCP sockets or other streams.
   - Not wired in this repo yet.
-- HTTP/Streamable HTTP: not implemented yet
-  - `ModelContextProtocol` 2.2.0 ships its Streamable HTTP server transport in `ModelContextProtocol.AspNetCore`, which targets .NET 8+.
-  - This server targets `net48` (required by TIA Openness), so Streamable HTTP cannot be hosted from this process.
-  - A separate .NET 8+ proxy process would be required to expose this server over HTTP.
+- Streamable HTTP (fork): `--http <url>`, see [Remote access over HTTP](#remote-access-over-http-arteigur-fork).
+  - ASP.NET Core does not run on `net48`, which Openness needs, so `HttpHost.cs` hosts the SDK's
+    transport-agnostic `StreamableHttpServerTransport` on `System.Net.HttpListener`: one transport and one
+    server per `Mcp-Session-Id`, the way the SDK's ASP.NET Core handler does it.
+
+## Remote access over HTTP (arteigur fork)
+
+For agents on another machine, typically Linux on the host of the Windows VM that runs TIA Portal.
+`--http <url>` serves the same tools over [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http)
+instead of stdio. The server is then one long-running process that several agents share; they also
+share its attached TIA Portal instance and presets.
+
+- **Token**: every request needs `Authorization: Bearer <token>`. The server refuses to start on a
+  network address without one; only `http://localhost:<port>/...` may run without. Set it with the
+  environment variable `TIA_MCP_HTTP_TOKEN` (or `--http-token`).
+- **Browsers are refused**: requests with an `Origin` header get 403, so a web page cannot reach it.
+- **Same flags as stdio**: `--allow-write`, `--allow-online`, `--allow-download` and `--allow-hardware`
+  decide which tools exist. Anyone with the token gets all of them, so leave out the online and
+  download flags unless the remote agents need them.
+- **Run it in the logged-on user's session**, where TIA Portal runs: from a terminal, a shortcut or a
+  Task Scheduler task "at log on" with "run only when user is logged on". Not as a Windows service:
+  Openness attaches to TIA Portal in the user's session. TIA Portal asks once to allow Openness access
+  for each new build of the exe; until someone answers that dialog in the VM, `Connect` waits (the
+  dialog can sit behind other windows).
+- The optional GET event stream is not offered (405); every response travels on its POST.
+  A session unused for 8 hours is closed; the client then initializes a new one.
+
+### Windows (the VM)
+
+One time, in an administrator PowerShell (port 8765 as an example; `<host-ip>` is the Linux host as
+the VM sees it, e.g. `192.168.122.1` on libvirt's default network):
+
+```powershell
+netsh http add urlacl url=http://+:8765/ user=$env:USERDOMAIN\$env:USERNAME
+New-NetFirewallRule -DisplayName "TIA MCP (HTTP 8765)" -Direction Inbound -Protocol TCP -LocalPort 8765 -RemoteAddress <host-ip> -Action Allow
+```
+
+Then start the server as the normal user. [`samples/http/Start-TiaMcpHttp.ps1`](samples/http/Start-TiaMcpHttp.ps1)
+creates a random token in `%USERPROFILE%\.tia-mcp-token` on first run and starts the exe with it:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File samples\http\Start-TiaMcpHttp.ps1
+```
+
+It prints `TIA Portal MCP server listening on http://<this-host>:8765/mcp (bearer token required)`.
+
+### Linux (the host)
+
+Find the VM's address (`virsh domifaddr <vm>` for libvirt / virt-manager, or `ipconfig` in the VM).
+With GNOME Boxes' default user-mode network the VM is not reachable from the host; use a libvirt
+bridge or NAT network, or the SSH tunnel below. Then, for Claude Code:
+
+```bash
+claude mcp add --transport http tia-portal http://192.168.122.50:8765/mcp --header "Authorization: Bearer <token>"
+```
+
+Or in a client's JSON configuration (Cursor `~/.cursor/mcp.json`, Claude Code `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "tia-portal": {
+      "type": "http",
+      "url": "http://192.168.122.50:8765/mcp",
+      "headers": { "Authorization": "Bearer ${TIA_MCP_TOKEN}" }
+    }
+  }
+}
+```
+
+### Alternative: SSH tunnel, no open port
+
+With the OpenSSH server enabled in Windows, start the server on `http://localhost:8765/mcp` (no URL
+reservation or firewall rule needed; still set a token) and forward the port from Linux:
+
+```bash
+ssh -N -L 8765:localhost:8765 <user>@<vm-address>
+```
+
+The agents then use `http://localhost:8765/mcp`.
 
 ## Client configuration
 

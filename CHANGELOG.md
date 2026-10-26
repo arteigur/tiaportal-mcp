@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added (arteigur fork, remote access)
+
+- __`--http <url>`__: serve the tools over Streamable HTTP instead of stdio, so agents on another
+  machine (Linux host of a Windows VM) can use TIA Portal. Hosted on `HttpListener` with the SDK's
+  `StreamableHttpServerTransport` (ASP.NET Core does not run on `net48`). Bearer token required on any
+  non-localhost address (`TIA_MCP_HTTP_TOKEN` or `--http-token`), browser requests (Origin header)
+  refused, idle sessions closed after 8 hours. `samples/http/Start-TiaMcpHttp.ps1` creates a token and
+  starts the server; README "Remote access over HTTP" has the Windows and Linux setup.
+
 ### Fixed (arteigur fork, house PLC import 2026-10-26)
 
 - __`GetDevices` / `GetDeviceInfo` / `GetDeviceItemInfo`__ failed with the SDK's bare "An error occurred invoking

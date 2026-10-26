@@ -1,10 +1,12 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 using TiaMcpServer.ModelContextProtocol;
@@ -96,6 +98,59 @@ namespace TiaMcpServer
                 .ToList();
         }
 
+        /// <summary>
+        /// Runs the configured MCP server over Streamable HTTP until Ctrl+C. The token comes from
+        /// '--http-token' or, better (it does not show in the process list), the environment
+        /// variable TIA_MCP_HTTP_TOKEN.
+        /// </summary>
+        private static async Task RunHttpHost(IHost host, CliOptions options)
+        {
+            var token = !string.IsNullOrEmpty(options.HttpToken)
+                ? options.HttpToken
+                : Environment.GetEnvironmentVariable("TIA_MCP_HTTP_TOKEN");
+
+            HttpHost httpHost;
+
+            try
+            {
+                httpHost = new HttpHost(
+                    options.Http!,
+                    token,
+                    host.Services.GetRequiredService<IOptions<global::ModelContextProtocol.Server.McpServerOptions>>().Value,
+                    host.Services.GetRequiredService<ILoggerFactory>(),
+                    host.Services);
+            }
+            catch (ArgumentException ex)
+            {
+                Console.Error.WriteLine(ex.Message);
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            using var stop = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, e) =>
+            {
+                e.Cancel = true;
+                stop.Cancel();
+            };
+
+            await host.StartAsync();
+
+            try
+            {
+                await httpHost.RunAsync(stop.Token);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Console.Error.WriteLine(ex.Message);
+                Environment.ExitCode = 1;
+            }
+            finally
+            {
+                await host.StopAsync();
+            }
+        }
+
         public static async Task RunStdioHost(CliOptions? options)
         {
             var builder = Host.CreateEmptyApplicationBuilder(settings: null);
@@ -135,7 +190,9 @@ namespace TiaMcpServer
                     }
                 }
 
-                builder.Services
+                var useHttp = !string.IsNullOrWhiteSpace(options?.Http);
+
+                var mcpBuilder = builder.Services
                     .AddMcpServer(serverOptions =>
                     {
                         serverOptions.ServerInfo = new global::ModelContextProtocol.Protocol.Implementation
@@ -160,8 +217,15 @@ namespace TiaMcpServer
                                 ? " Write mode is enabled: tools that create, rename or delete project objects are " +
                                   "available. Their changes stay in memory until 'SaveProject' (or 'SaveSession')."
                                 : string.Empty);
-                    })
-                    .WithStdioServerTransport()
+                    });
+
+                // '--http' serves the same tools over Streamable HTTP (HttpHost) instead of stdio.
+                if (!useHttp)
+                {
+                    mcpBuilder.WithStdioServerTransport();
+                }
+
+                mcpBuilder
                     .WithRequestFilters(filters =>
                     {
                         filters.AddCallToolFilter(PortalSelection.Filter);
@@ -204,7 +268,14 @@ namespace TiaMcpServer
                     }
                 }
 
-                await host.RunAsync();
+                if (useHttp)
+                {
+                    await RunHttpHost(host, options!);
+                }
+                else
+                {
+                    await host.RunAsync();
+                }
             }
 
         }
