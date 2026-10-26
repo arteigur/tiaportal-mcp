@@ -8,12 +8,14 @@ namespace TiaMcpServer.ModelContextProtocol
 {
     public static partial class McpServer
     {
-        // Online state, go online / offline, and the two-step download.
+        // Online state, go online / offline, actual values of a data block, and the two-step download.
         //
-        // Callers: registered through Program.BuildTools(); GoOnline / GoOffline only with
-        // '--allow-online', PreviewDownload / Download only with '--allow-download' (PlantPolicy).
-        // Data: structuredContent responses; no files. GetOnlineState and GetConnectionTargets read
-        // the project's connection settings and never connect, so they are always registered.
+        // Callers: registered through Program.BuildTools(); GoOnline / GoOffline / GetDbActualValues
+        // only with '--allow-online', PreviewDownload / Download only with '--allow-download' (PlantPolicy).
+        // Data: structuredContent responses; GetDbActualValues exports one snapshot file into a
+        // scratch directory that is removed again (or kept at 'exportFile'). GetOnlineState and
+        // GetConnectionTargets read the project's connection settings and never connect, so they
+        // are always registered.
 
         [McpServerTool(Name = "GetOnlineState", Title = "Get PLC online state", ReadOnly = true, OpenWorld = false, UseStructuredContent = true),
          Description("Show whether TIA Portal is online to a PLC (Offline, Connecting, Online, NotReachable, Protected, ...) without connecting. Imports and most writes need 'Offline'")]
@@ -100,6 +102,44 @@ namespace TiaMcpServer.ModelContextProtocol
                     PlcName = softwarePath,
                     State = state.ToString(),
                     Meta = Ok()
+                };
+            });
+        }
+
+        [OnlineTool]
+        [McpServerTool(Name = "GetDbActualValues", Title = "Read actual values of a data block", ReadOnly = true, Idempotent = false, OpenWorld = true, UseStructuredContent = true),
+         Description("Read the actual (live) values of one data block from the running PLC, as TIA Portal's DB editor snapshot does. The PLC must be online ('GoOnline' first). Returns member path, data type and value, nested structs and arrays flattened. " +
+                     "Reads only; never writes values to the PLC. TIA Portal keeps the snapshot with the offline block (the DB editor's Snapshot column), replacing the block's previous snapshot; projectModifiedBefore/After show whether the project gained unsaved changes. Nothing needs saving for the read. Call 'GoOffline' when done")]
+        public static ResponseDbActualValues GetDbActualValues(
+            [Description("softwarePath: defines the path in the project structure to the PLC software")] string softwarePath,
+            [Description("blockPath: root-relative path of the data block, e.g. 'Modbus/db_ModbusRead'")] string blockPath,
+            [Description("memberFilter: only members whose path contains this text (case-insensitive), e.g. 'Voltage'. Default: all")] string? memberFilter = null,
+            [Description("maxItems: return at most this many values (default 500, at most 5000)")] int maxItems = 500,
+            [Description("exportFile: optional absolute path to also keep the snapshot's SimaticML file")] string? exportFile = null)
+        {
+            PlantPolicy.EnsureOnline(nameof(GetDbActualValues));
+
+            return RunPlantTool(nameof(GetDbActualValues), () =>
+            {
+                var result = Portal.GetDbActualValues(softwarePath, blockPath, memberFilter, maxItems, exportFile);
+                var marked = result.ProjectModifiedAfter == true && result.ProjectModifiedBefore != true;
+
+                return new ResponseDbActualValues
+                {
+                    Message = $"{result.Values.Count} of {result.Matched} value(s) of '{result.BlockName}' on '{result.PlcName}'" +
+                              (string.IsNullOrWhiteSpace(memberFilter) ? string.Empty : $" matching '{memberFilter}' ({result.Total} in the block)") +
+                              (result.Truncated ? " (truncated; raise maxItems or narrow memberFilter)" : string.Empty) +
+                              $", snapshot {result.SnapshotTimestamp ?? result.ReadAt.ToString("o")}" +
+                              (marked ? ". Taking the snapshot gave the project unsaved changes (it is kept with the offline block)" : string.Empty),
+                    Result = result,
+                    Meta = Ok(new JsonObject
+                    {
+                        ["total"] = result.Total,
+                        ["returned"] = result.Values.Count,
+                        ["truncated"] = result.Truncated,
+                        ["projectModifiedBefore"] = result.ProjectModifiedBefore,
+                        ["projectModifiedAfter"] = result.ProjectModifiedAfter
+                    })
                 };
             });
         }

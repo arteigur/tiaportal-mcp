@@ -31,7 +31,7 @@ A MCP server which connects to Siemens TIA Portal.
 | `--preserve-path`         | Flag: `preservePath` defaults to `true` for the export tools. See below.              |
 | `--with-dependencies`     | Flag: `withDependencies` defaults to `true` for the `ExportSource*` tools. See below. |
 | `--allow-write`           | Register the project-mutating tools. Omitted by default; see below.                   |
-| `--allow-online`          | Register `GoOnline` / `GoOffline` and `CompareSoftwareToOnline`, which connect to the real PLC. Never downloads. |
+| `--allow-online`          | Register `GoOnline` / `GoOffline`, `CompareSoftwareToOnline` and `GetDbActualValues`, which connect to the real PLC. Never downloads or writes values. |
 | `--allow-download`        | Register `PreviewDownload` / `Download`. See [Plant tools](#plant-tools-arteigur-fork). |
 | `--allow-hardware`        | With `--allow-write`: register `CreateDevice` / `PlugModule`.                          |
 | `--http <url>`            | Serve over Streamable HTTP at this URL instead of stdio, e.g. `http://+:8765/mcp`. See [Remote access over HTTP](#remote-access-over-http-arteigur-fork). |
@@ -102,8 +102,9 @@ Read-only tools (76) are always available, including the fork's `GetSessionConte
 | Compare                       | `CompareBlockToFile`, `CompareBlocksToFolder`, `CompareSoftware`                                                                                   |
 | Understand and read (comfort) | `GetPlcSummary`, `ResolveObjectPath`, `WhereUsed`, `FindInCode`, `GetBlockInterface`, `PreviewImport`, `OpenTiaProject`, `ExportPlcAsDocuments`    |
 
-Online tools (3) require `--allow-online`: `GoOnline`, `GoOffline`, and `CompareSoftwareToOnline`, which goes online to the PLC over the
-online access configured in the project, compares, and goes offline again. It never downloads or writes values.
+Online tools (4) require `--allow-online`: `GoOnline`, `GoOffline`, `CompareSoftwareToOnline`, which goes online to the PLC over the
+online access configured in the project, compares, and goes offline again, and `GetDbActualValues`, which reads the live values of a
+data block (see [Plant tools](#plant-tools-arteigur-fork)). None of them downloads or writes values.
 
 The compare tools normalise SimaticML before diffing: the XML declaration, `<Engineering version>`,
 `<DocumentInfo>`, every `ID` attribute and the block timestamps (`CreationDate`, `ModifiedDate`, ...) are
@@ -152,6 +153,7 @@ offline project has its own flag, so a client can allow one without the others.
 | Orientation | `GetSessionContext` - portal, project, unsaved changes, per PLC `softwarePath`, CPU type, online state, last compile | always |
 | Online state | `GetOnlineState`, `GetConnectionTargets` - read the connection settings, never connect | always |
 | Go online | `GoOnline`, `GoOffline` | `--allow-online` |
+| Live values | `GetDbActualValues` - actual values of one data block from the running PLC (TIA Portal's DB snapshot), read-only | `--allow-online` |
 | Download | `PreviewDownload` (compile + single-use `confirmToken`, 15 min), `Download` | `--allow-download` |
 | Safe import | `ImportAndCompile` - import files, compile, undo the import on compile errors | `--allow-write` |
 | Blocks | `CreateBlock` - empty OB (program cycle, startup, time of day, time delay, cyclic interrupt with cycle time, hardware, time error, diagnostic error, pull/plug, rack failure), FC or global DB | `--allow-write` |
@@ -171,6 +173,27 @@ How the download stays safe:
   answer that made it abort.
 - Verified so far against a scratch project only: preview, token handling and the policy plumbing. A real download
   has not been run through this tool yet.
+
+How `GetDbActualValues` reads live values: Openness V21 has no general online read (watch tables cannot be
+monitored through it). The one way is the DB editor's "snapshot of the monitored values":
+`ValueService.CreateSnapshot()` on the block's interface reads the actual values from the PLC, and the block's
+`InterfaceSnapshot` service exports them as SimaticML (with `ExportOptions.WithReadOnly`; without it the export
+holds only the block name). The tool returns member path, data type and value for every leaf member, the
+snapshot time (`SnapshotDate`, UTC), an optional `memberFilter` (substring of the path) and `maxItems` (default
+500, at most 5000); `exportFile` keeps a copy of the SimaticML.
+
+- The PLC must already be online (`GoOnline`); otherwise the tool refuses. It does not go online by itself, so
+  an agent cannot reach the plant without first making the visible `GoOnline` call. Call `GoOffline` when done.
+- Read-only towards the PLC. `ValueService.LoadSnapshotAsActualValues` and `LoadStartValuesAsActualValues`
+  write to the PLC; no tool calls them.
+- TIA Portal keeps the snapshot with the offline block (the DB editor's Snapshot column), so each call replaces
+  the block's previous snapshot. The block's `ModifiedDate` does not change. The result reports the project's
+  `IsModified` before and after the snapshot (`projectModifiedBefore` / `projectModifiedAfter`). The first test
+  ran on a project that already had unsaved changes, so it is not yet known whether a snapshot alone marks a
+  clean project modified. Saving is not needed for the read.
+- Data blocks only (global and instance DBs). Know-how protected blocks hide their interface.
+- Tested on V21 against an S7-1215C (FW 4.6), global DB with standard access: 13 `Real` values, about a second
+  per call. Nested structs, arrays and optimized DBs have not been tested yet.
 
 How `ImportAndCompile` rolls back: TIA Portal does not compile inside an Openness transaction, so the blocks the
 files will replace (names read from the files) are exported first, the imports run in one transaction, then the

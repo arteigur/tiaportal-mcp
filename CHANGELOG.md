@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added (arteigur fork, live values)
+
+- __`GetDbActualValues`__ (`--allow-online`, read-only): the actual values of one data block from the running PLC,
+  through the DB editor's snapshot (`ValueService.CreateSnapshot` on the block interface, then
+  `InterfaceSnapshot.Export` with `WithReadOnly`). Returns member path, data type and value per leaf member, the
+  snapshot time, `memberFilter`, `maxItems` (default 500, at most 5000) and an optional `exportFile` copy of the
+  SimaticML. Refuses unless the PLC is already online (`GoOnline`). The write calls `LoadSnapshotAsActualValues` /
+  `LoadStartValuesAsActualValues` are not exposed. The snapshot is kept with the offline block and replaces its
+  previous one; the block's `ModifiedDate` stays, and the result reports the project's `IsModified` before and after.
+  Tested read-only against `db_ModbusRead` on the plant's S7-1215C.
+
 ### Added (arteigur fork, remote access)
 
 - __`--http <url>`__: serve the tools over Streamable HTTP instead of stdio, so agents on another
