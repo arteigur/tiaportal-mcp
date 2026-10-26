@@ -128,6 +128,20 @@ namespace TiaMcpServer.ModelContextProtocol
             }
         }
 
+        [WriteTool]
+        [McpServerTool(Name = "CreateDeviceGroup", Title = "Create device group", Destructive = true, OpenWorld = false, UseStructuredContent = true),
+         Description("Create a device group (a folder for devices in the project tree) below the project root or below an existing device group. Creates only the folder: no device is moved and no hardware or network setting changes")]
+        public static ResponseCreated CreateDeviceGroup(
+            [Description("parentGroupPath: path of the parent device group, e.g. 'Plant' or 'Plant/House'; empty creates directly below the project")] string parentGroupPath,
+            [Description("name: name of the new group, without a slash")] string name)
+        {
+            return Guarded(nameof(CreateDeviceGroup), () =>
+            {
+                Portal.CreateDeviceGroup(parentGroupPath ?? string.Empty, name);
+                return Created("Device group", name, JoinPath(parentGroupPath ?? string.Empty, name));
+            });
+        }
+
         private static ResponseDeviceInfo DescribeDevice(Device device, bool withItems)
         {
             string? typeIdentifier;

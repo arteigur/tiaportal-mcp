@@ -108,11 +108,12 @@ The compare tools normalise SimaticML before diffing: the XML declaration, `<Eng
 ignored and the XML is re-indented. Source texts are compared with line ends and trailing whitespace
 normalised (`ignoreWhitespace` also drops indentation). In the diff `-` is the file on disk, `+` the project.
 
-Write tools (51) require `--allow-write`, including the fork's `CreateBlock` and `ImportAndCompile`. `--allow-download` adds `PreviewDownload` / `Download`, `--allow-hardware` adds `CreateDevice` / `PlugModule`.
+Write tools (52) require `--allow-write`, including the fork's `CreateBlock` and `ImportAndCompile`. `--allow-download` adds `PreviewDownload` / `Download`, `--allow-hardware` adds `CreateDevice` / `PlugModule`.
 
 | Area                  | Tools                                                                                                                                                                                                                                         |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Block and type groups | `CreateBlockGroup`, `DeleteBlockGroup`, `CreateTypeGroup`, `DeleteTypeGroup`                                                                                                                                                                  |
+| Device groups         | `CreateDeviceGroup` (fork: a folder for devices in the project tree; no device is moved)                                                                                                                                                      |
 | Blocks and types      | `DeleteBlock`, `RenameBlock`, `DeleteType`, `RenameType`, `CreateFB`, `CreateInstanceDB`                                                                                                                                                      |
 | Copy and move         | `CopyBlock`, `MoveBlock`, `CopyType`, `MoveType`                                                                                                                                                                                              |
 | Tag tables            | `CreateTagTable`, `DeleteTagTable`, `RenameTagTable`, `CreateTagTableGroup`, `DeleteTagTableGroup`, `ImportXmlTagTable`                                                                                                                       |

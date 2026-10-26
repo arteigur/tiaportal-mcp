@@ -61,6 +61,58 @@ namespace TiaMcpServer.Siemens
 
         }
 
+        /// <summary>
+        /// Creates a device group (a folder in the project tree next to the devices) below the
+        /// project root or below an existing group. Only the folder: devices are not moved into it,
+        /// and no hardware or network setting changes.
+        /// </summary>
+        public DeviceUserGroup CreateDeviceGroup(string parentGroupPath, string name)
+        {
+            return Operation.Run(_logger, nameof(CreateDeviceGroup), PortalErrorCode.CreateFailed,
+                () =>
+                {
+                    if (_project is null)
+                    {
+                        throw new PortalException(PortalErrorCode.InvalidState, "No project is open. Use 'OpenProject' or 'OpenTiaProject' first.");
+                    }
+
+                    EnsureValidName(name);
+
+                    var groups = GetDeviceGroupComposition(parentGroupPath)
+                        ?? throw new PortalException(PortalErrorCode.NotFound,
+                            $"Device group not found at '{parentGroupPath}'. 'GetProjectTree' shows the groups as [Subgroup]; leave it empty for the project root.");
+
+                    if (groups.Any(g => g.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        throw new PortalException(PortalErrorCode.InvalidParams,
+                            $"A device group named '{name}' already exists in '{(string.IsNullOrWhiteSpace(parentGroupPath) ? "the project root" : parentGroupPath)}'.");
+                    }
+
+                    return groups.Create(name);
+                },
+                ("parentGroupPath", parentGroupPath), ("name", name));
+        }
+
+        /// <summary>The sub groups of the device group at the path; the project's own groups for an empty path.</summary>
+        private DeviceUserGroupComposition? GetDeviceGroupComposition(string groupPath)
+        {
+            var groups = _project?.DeviceGroups;
+
+            foreach (var segment in (groupPath ?? string.Empty).Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var group = groups?.FirstOrDefault(g => g.Name.Equals(segment.Trim(), StringComparison.OrdinalIgnoreCase));
+
+                if (group is null)
+                {
+                    return null;
+                }
+
+                groups = group.Groups;
+            }
+
+            return groups;
+        }
+
         #endregion
 
         #region get...by path

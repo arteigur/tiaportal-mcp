@@ -22,6 +22,8 @@
   caught failure inside it) reports that the call was rolled back, with the failures that caused it, instead of a
   bare CommitOnDispose error.
 - __`ImportAndCompile` warnings__: the result has a `Warnings` list (up to 100) next to the error `Messages`.
+- __`CreateDeviceGroup`__ (`--allow-write`): creates a device group (project tree folder) below the project root
+  or an existing group, nested by path such as `Plant/House`. Only the folder; devices are not moved.
 - __`CompilePlcSoftware rebuildAll`__: compiles every block on its own, then the PLC software, so the warnings of
   an already compiled PLC are reported.
 
