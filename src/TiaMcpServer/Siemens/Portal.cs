@@ -903,21 +903,43 @@ namespace TiaMcpServer.Siemens
                     return body();
                 }
 
-                using (transaction)
+                var bodyDone = false;
+                T result = default!;
+
+                try
                 {
-                    var result = body();
-
-                    // Only reached when the body did not throw. Without this call the using
-                    // block rolls the transaction back on dispose.
-                    transaction.CommitOnDispose();
-
-                    if (access.IsCancellationRequested)
+                    using (transaction)
                     {
-                        _logger?.LogInformation("The operator requested cancellation during '{Description}'", description);
-                    }
+                        result = body();
+                        bodyDone = true;
 
-                    return result;
+                        // Only reached when the body did not throw. Without this call the using
+                        // block rolls the transaction back on dispose.
+                        transaction.CommitOnDispose();
+
+                        if (access.IsCancellationRequested)
+                        {
+                            _logger?.LogInformation("The operator requested cancellation during '{Description}'", description);
+                        }
+                    }
                 }
+                catch (Exception ex) when (bodyDone && ex is not PortalException)
+                {
+                    // The commit happens on dispose. TIA Portal refuses it when an operation
+                    // inside the transaction failed and was caught (a source file that did not
+                    // compile, in a folder import that carries on with the next file), and the
+                    // whole call is rolled back. Say so, with the failures that caused it, rather
+                    // than surfacing a bare CommitOnDispose error.
+                    var failures = result is ImportedSourcesResult imported && imported.Failures.Count > 0
+                        ? " Failures before the commit: " + string.Join("; ", imported.Failures)
+                        : string.Empty;
+
+                    throw new PortalException(PortalErrorCode.CommitFailed,
+                        $"TIA Portal refused to commit '{description}', so nothing it did was kept: {ImportErrors.Describe(ex)}.{failures}",
+                        null, ex);
+                }
+
+                return result;
             }
         }
 

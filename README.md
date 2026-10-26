@@ -108,11 +108,12 @@ The compare tools normalise SimaticML before diffing: the XML declaration, `<Eng
 ignored and the XML is re-indented. Source texts are compared with line ends and trailing whitespace
 normalised (`ignoreWhitespace` also drops indentation). In the diff `-` is the file on disk, `+` the project.
 
-Write tools (51) require `--allow-write`, including the fork's `CreateBlock` and `ImportAndCompile`. `--allow-download` adds `PreviewDownload` / `Download`, `--allow-hardware` adds `CreateDevice` / `PlugModule`.
+Write tools (53) require `--allow-write`, including the fork's `CreateBlock` and `ImportAndCompile`. `--allow-download` adds `PreviewDownload` / `Download`, `--allow-hardware` adds `CreateDevice` / `PlugModule`.
 
 | Area                  | Tools                                                                                                                                                                                                                                         |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Block and type groups | `CreateBlockGroup`, `DeleteBlockGroup`, `CreateTypeGroup`, `DeleteTypeGroup`                                                                                                                                                                  |
+| Device groups         | `CreateDeviceGroup`, `DeleteDeviceGroup` (fork: folders for devices in the project tree; create moves no device, delete refuses a group that is not empty) |
 | Blocks and types      | `DeleteBlock`, `RenameBlock`, `DeleteType`, `RenameType`, `CreateFB`, `CreateInstanceDB`                                                                                                                                                      |
 | Copy and move         | `CopyBlock`, `MoveBlock`, `CopyType`, `MoveType`                                                                                                                                                                                              |
 | Tag tables            | `CreateTagTable`, `DeleteTagTable`, `RenameTagTable`, `CreateTagTableGroup`, `DeleteTagTableGroup`, `ImportXmlTagTable`                                                                                                                       |
@@ -122,6 +123,15 @@ Write tools (51) require `--allow-write`, including the fork's `CreateBlock` and
 | Type documents (V21+) | `ImportTypeFromDocuments`, `ImportTypesFromDocuments`                                                                                                                                                                                         |
 | XML and documents     | `ImportXmlBlock`, `ImportXmlType`, `ImportFromDocuments` (V20+), `ImportBlocksFromDocuments` (V20+) |
 | Multiuser             | `CommitChanges` (commits the local session to the server and closes the session)                                                                                                                                                              |
+
+`GetDeviceInfo` lists the device's items (rack, CPU, modules) with position, type identifier, order number and
+I/O addresses (`StartAddress`, `LengthBits`, and the byte range such as `%QB96..%QB99`), each address naming the
+sub item that holds it. `GetDeviceItemInfo` does the same for one item and takes paths such as
+`House station/Rack_0/AQ 2x14BIT_House` or `House station/AQ 2x14BIT_House`.
+
+`CompilePlcSoftware` compiles changes only, like TIA Portal's "Compile > Software (only changes)", so an already
+compiled PLC reports none of its warnings again. Pass `rebuildAll: true` to compile every program block on its own
+and then the PLC software; all their messages are returned. Openness has no rebuild-all call of its own.
 
 `GetSoftwareTree` accepts a `sections` argument - any comma separated subset of
 `blocks,types,tags,watch,sources`, default `all` - to keep the output small on a large PLC.
@@ -142,7 +152,7 @@ offline project has its own flag, so a client can allow one without the others.
 | Go online | `GoOnline`, `GoOffline` | `--allow-online` |
 | Download | `PreviewDownload` (compile + single-use `confirmToken`, 15 min), `Download` | `--allow-download` |
 | Safe import | `ImportAndCompile` - import files, compile, undo the import on compile errors | `--allow-write` |
-| Blocks | `CreateBlock` - empty OB (program cycle / cyclic interrupt with cycle time / startup), FC or global DB | `--allow-write` |
+| Blocks | `CreateBlock` - empty OB (program cycle, startup, time of day, time delay, cyclic interrupt with cycle time, hardware, time error, diagnostic error, pull/plug, rack failure), FC or global DB | `--allow-write` |
 | Hardware (read) | `SearchHardwareCatalog`, `GetPlugLocations` | always |
 | Hardware (add) | `CreateDevice`, `PlugModule` | `--allow-write --allow-hardware` |
 

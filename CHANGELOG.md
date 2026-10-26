@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Fixed (arteigur fork, house PLC import 2026-10-26)
+
+- __`GetDevices` / `GetDeviceInfo` / `GetDeviceItemInfo`__ failed with the SDK's bare "An error occurred invoking
+  ...": attribute values were returned as raw Openness objects, which the JSON serializer cannot write after the
+  tool returns. Attribute values are now plain JSON (engineering objects by name, enums by name, short lists),
+  and an attribute that cannot be read is null instead of failing the call. Device item paths are walked through
+  every level (`Device/Rack_0/Module`, `Device/Module/SubModule`); before, the walk stopped at the second segment.
+- __Device I/O addresses__: `GetDeviceInfo` lists each device item with position, type identifier, order number
+  and I/O addresses; `GetDeviceItemInfo` returns them for one item and its sub items.
+- __`CreateBlock` cyclic time__: the OB attribute `CyclicTime` is in milliseconds in V21 (a 100 ms OB30 reads back
+  100). The tool multiplied by 1000, which TIA Portal rejects. It now passes milliseconds (1-60000), and deletes the
+  OB again if setting the time fails.
+- __`CreateBlock` OB types__: adds TimeOfDay, TimeDelayInterrupt, HardwareInterrupt, TimeErrorInterrupt (OB80),
+  DiagnosticErrorInterrupt (OB82), PullOrPlugOfModules (OB83) and RackOrStationFailure (OB86), with their S7-1200
+  start information, and short aliases such as `TimeError`.
+- __Import errors__: a failed Portal operation now carries TIA Portal's own message and the detail messages of an
+  `EngineeringException`, instead of "ImportSourceBlock failed". A transaction TIA Portal refuses to commit (after a
+  caught failure inside it) reports that the call was rolled back, with the failures that caused it, instead of a
+  bare CommitOnDispose error.
+- __`ImportAndCompile` warnings__: the result has a `Warnings` list (up to 100) next to the error `Messages`.
+- __`CreateDeviceGroup`__ (`--allow-write`): creates a device group (project tree folder) below the project root
+  or an existing group, nested by path such as `Plant/House`. Only the folder; devices are not moved.
+  __`DeleteDeviceGroup`__ deletes an empty device group only; a group holding a device or a sub group is refused.
+- __`CompilePlcSoftware rebuildAll`__: compiles every block on its own, then the PLC software, so the warnings of
+  an already compiled PLC are reported.
+
 ### Added (arteigur fork)
 
 - __`GetSessionContext`__: one read-only call with the attached portal, open project, unsaved changes, and per

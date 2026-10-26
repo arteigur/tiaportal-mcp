@@ -19,13 +19,47 @@ namespace TiaMcpServer.Siemens
         // temp file and imported with ImportOptions.None - which refuses to replace an existing
         // block. The temp file is deleted afterwards.
 
+        // OB event classes: the SimaticML SecondaryType (the names TIA Portal V21 accepts), the
+        // usual numbers, and the start information TIA Portal gives an optimized OB of that class
+        // on an S7-1200 / S7-1500. ProgrammingError (OB121) and IOAccessError (OB122) exist on
+        // the S7-1500 only and are left out.
         private static readonly Dictionary<string, (int[] Preferred, string Inputs)> ObTypes =
             new(StringComparer.OrdinalIgnoreCase)
             {
                 ["ProgramCycle"] = (new[] { 1 }, Member("Initial_Call", "Bool") + Member("Remanence", "Bool")),
+                ["Startup"] = (new[] { 100 }, Member("LostRetentive", "Bool") + Member("LostRTC", "Bool")),
+                ["TimeOfDay"] = (new[] { 10, 11, 12, 13, 14, 15, 16, 17 }, Member("CaughtUp", "Bool") + Member("SecondTimes", "Bool")),
+                ["TimeDelayInterrupt"] = (new[] { 20, 21, 22, 23 }, Member("Sign", "Word")),
                 ["CyclicInterrupt"] = (new[] { 30, 31, 32, 33, 34, 35, 36, 37, 38 }, Member("Initial_Call", "Bool") + Member("Event_Count", "Int")),
-                ["Startup"] = (new[] { 100 }, Member("LostRetentive", "Bool") + Member("LostRTC", "Bool"))
+                ["HardwareInterrupt"] = (new[] { 40, 41, 42, 43, 44, 45, 46, 47 },
+                    Member("LADDR", "HW_IO") + Member("USI", "Word") + Member("IChannel", "USInt") + Member("EventType", "Byte")),
+                ["TimeErrorInterrupt"] = (new[] { 80 }, Member("fault_id", "Byte") + Member("csg_OBnr", "OB_ANY") + Member("csg_prio", "UInt")),
+                ["DiagnosticErrorInterrupt"] = (new[] { 82 },
+                    Member("IO_state", "Word") + Member("laddr", "HW_ANY") + Member("channel", "UInt") + Member("multi_error", "Bool")),
+                ["PullOrPlugOfModules"] = (new[] { 83 }, Member("LADDR", "HW_IO") + Member("Event_Class", "Byte") + Member("Fault_ID", "Byte")),
+                ["RackOrStationFailure"] = (new[] { 86 }, Member("LADDR", "HW_IO") + Member("Event_Class", "Byte") + Member("Fault_ID", "Byte"))
             };
+
+        // Short names agents reach for, mapped to the SimaticML name.
+        private static readonly Dictionary<string, string> ObTypeAliases =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Cyclic"] = "CyclicInterrupt",
+                ["TimeError"] = "TimeErrorInterrupt",
+                ["DiagnosticError"] = "DiagnosticErrorInterrupt",
+                ["Diagnostic"] = "DiagnosticErrorInterrupt",
+                ["PullPlug"] = "PullOrPlugOfModules",
+                ["PullOrPlug"] = "PullOrPlugOfModules",
+                ["RackFailure"] = "RackOrStationFailure",
+                ["RackStationFailure"] = "RackOrStationFailure",
+                ["TimeOfDayInterrupt"] = "TimeOfDay",
+                ["TimeDelay"] = "TimeDelayInterrupt",
+                ["Hardware"] = "HardwareInterrupt",
+                ["HardwareProcessInterrupt"] = "HardwareInterrupt"
+            };
+
+        /// <summary>Highest cycle time of a cyclic interrupt OB, in ms (S7-1200 and S7-1500: 1 ms to 60 s).</summary>
+        private const int MaxCyclicTimeMs = 60000;
 
         public PlcBlock CreateBlock(string softwarePath, string groupPath, string blockType, string name, int number, string language, string obType, int cyclicTimeMs)
         {
@@ -51,13 +85,33 @@ namespace TiaMcpServer.Siemens
                     switch (kind)
                     {
                         case "OB":
-                            if (!ObTypes.TryGetValue(string.IsNullOrWhiteSpace(obType) ? "ProgramCycle" : obType, out var ob))
+                            var requested = string.IsNullOrWhiteSpace(obType) ? "ProgramCycle" : obType.Trim();
+
+                            if (ObTypeAliases.TryGetValue(requested, out var alias))
+                            {
+                                requested = alias;
+                            }
+
+                            if (!ObTypes.TryGetValue(requested, out var ob))
                             {
                                 throw new PortalException(PortalErrorCode.InvalidParams,
                                     $"Unknown OB type '{obType}'. Use one of: {string.Join(", ", ObTypes.Keys)}.");
                             }
 
-                            var obTypeName = ObTypes.Keys.First(k => string.Equals(k, string.IsNullOrWhiteSpace(obType) ? "ProgramCycle" : obType, StringComparison.OrdinalIgnoreCase));
+                            var obTypeName = ObTypes.Keys.First(k => string.Equals(k, requested, StringComparison.OrdinalIgnoreCase));
+
+                            if (cyclicTimeMs != 0 && obTypeName != "CyclicInterrupt")
+                            {
+                                throw new PortalException(PortalErrorCode.InvalidParams,
+                                    $"'cyclicTimeMs' applies to a CyclicInterrupt OB only, not to '{obTypeName}'.");
+                            }
+
+                            if (cyclicTimeMs < 0 || cyclicTimeMs > MaxCyclicTimeMs)
+                            {
+                                throw new PortalException(PortalErrorCode.InvalidParams,
+                                    $"'cyclicTimeMs' must be between 1 and {MaxCyclicTimeMs} ms, or 0 for TIA Portal's default (100 ms).");
+                            }
+
                             chosen = ChooseNumber(number, existing.OfType<OB>().Select(b => b.Number), ob.Preferred);
                             xml = BlockXml("SW.Blocks.OB", name, chosen, CodeLanguage(language),
                                 Section("Input", ob.Inputs) + Section("Temp") + Section("Constant"),
@@ -104,8 +158,7 @@ namespace TiaMcpServer.Siemens
 
                         if (kind == "OB" && cyclicTimeMs > 0)
                         {
-                            // Openness takes the cycle time in microseconds.
-                            block.SetAttribute("CyclicTime", cyclicTimeMs * 1000);
+                            SetCyclicTime(block, name, cyclicTimeMs);
                         }
 
                         return block;
@@ -119,6 +172,41 @@ namespace TiaMcpServer.Siemens
                     }
                 },
                 ("softwarePath", softwarePath), ("groupPath", groupPath), ("name", name), ("blockType", blockType));
+        }
+
+        /// <summary>
+        /// Sets the cycle time of a freshly created cyclic interrupt OB. The OB attribute
+        /// 'CyclicTime' is in milliseconds in TIA Portal V21 (a 100 ms OB30 reads back 100); the
+        /// earlier code passed microseconds, which TIA Portal rejects as out of range. The value is
+        /// converted to the attribute's own type. On failure the OB is deleted again, so a failed
+        /// call does not leave an OB with the wrong cycle time behind.
+        /// </summary>
+        private static void SetCyclicTime(PlcBlock block, string name, int cyclicTimeMs)
+        {
+            try
+            {
+                var current = block.GetAttribute("CyclicTime");
+                var value = current == null ? cyclicTimeMs : Convert.ChangeType(cyclicTimeMs, current.GetType());
+
+                block.SetAttribute("CyclicTime", value);
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    block.Delete();
+                }
+                catch (Exception)
+                {
+                    // Reported below: the caller has to remove the OB by hand.
+                    throw new PortalException(PortalErrorCode.CreateFailed,
+                        $"OB '{name}' was created but setting its cycle time to {cyclicTimeMs} ms failed, and deleting it again failed too; " +
+                        $"set the cycle time in TIA Portal or delete the OB: {ImportErrors.Describe(ex)}", null, ex);
+                }
+
+                throw new PortalException(PortalErrorCode.CreateFailed,
+                    $"Setting the cycle time of OB '{name}' to {cyclicTimeMs} ms failed, so the OB was not created: {ImportErrors.Describe(ex)}", null, ex);
+            }
         }
 
         private static void EnsureValidBlockName(string name)
